@@ -1,5 +1,10 @@
 import random
 
+import sys
+sys.path.append('/Users/roxyhou/Documents/GitHub/langcache')
+print(sys.path)
+
+
 from tqdm import tqdm
 from collections import defaultdict
 
@@ -44,12 +49,13 @@ random.shuffle(qid_list)
 train_qid_list, test_qid_list = set(qid_list[:split_idx]), set(qid_list[split_idx:])
 
 cache = Cache(tune_frequency=0, tune_policy="recall")
-for train_qid in tqdm(train_qid_list):
+for train_qid in train_qid_list:
     # Insert cache.
     cache.put(id_to_question[train_qid], str(train_qid))
 
 tp, fn, fp = 0, 0, 0
-for i, test_qid in tqdm(enumerate(test_qid_list)):
+print("done")
+for i, test_qid in enumerate(test_qid_list):
     # Test tuning.
     if i % 5 == 0:
         ret_key, ret_value, ret_distance = cache._top_k(id_to_question[test_qid])

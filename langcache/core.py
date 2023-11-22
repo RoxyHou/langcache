@@ -19,6 +19,7 @@ class Cache:
         self.cursor = evadb.connect().cursor()
 
         # Setup needed functions.
+        self.cursor.query("DROP FUNCTION IF EXISTS SentenceFeature;").df()
         self.cursor.query(
             f"""
             CREATE FUNCTION IF NOT EXISTS SentenceFeature IMPL "{dir_path}/functions/sentence_feature.py"
@@ -144,6 +145,7 @@ class Cache:
         value = self._replace_str(value)
 
         if not self.init:
+            self.cursor.query(f"""DROP TABLE IF EXISTS {self.cache_name}""").df()
             self.cursor.query(
                 f"""
                 CREATE TABLE {self.cache_name} (key TEXT(1000), value TEXT(1000))
@@ -154,9 +156,13 @@ class Cache:
                 INSERT INTO {self.cache_name} (key, value) VALUES ("{key}", "{value}")
             """
             ).df()
+
+            # delete index if exists 
+            self.cursor.query(f"""DROP INDEX IF EXISTS {self.cache_name}""").df()
+
             self.cursor.query(
                 f"""
-                CREATE INDEX {self.cache_name} ON {self.cache_name} (SentenceFeature(key)) USING FAISS
+                CREATE INDEX {self.cache_name} ON {self.cache_name} (SentenceFeature(key)) USING QDRANT
             """
             ).df()
             self.init = True
