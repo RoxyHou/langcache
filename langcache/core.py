@@ -4,6 +4,7 @@ import openai
 import string
 import random
 import multiprocessing as mp
+from pathlib import Path
 
 from langcache.statistics.simple import SimpleStatistics
 from langcache.tuning.tune import tune
@@ -12,6 +13,7 @@ from langcache.tuning.tune import tune
 import os
 
 dir_path = os.path.dirname(os.path.realpath(__file__))
+EvaDB_INSTALLATION_DIR = Path(evadb.__file__).parent
 
 
 class Cache:
@@ -23,6 +25,18 @@ class Cache:
         self.cursor.query(
             f"""
             CREATE FUNCTION IF NOT EXISTS SentenceFeature IMPL "{dir_path}/functions/sentence_feature.py"
+        """
+        ).df()
+
+        self.cursor.query("DROP FUNCTION IF EXISTS Similarity;").df()
+        self.cursor.query(
+            f"""
+            CREATE FUNCTION IF NOT EXISTS Similarity 
+            INPUT (Frame_Array_Open NDARRAY UINT8(3, ANYDIM, ANYDIM),
+                Frame_Array_Base NDARRAY UINT8(3, ANYDIM, ANYDIM), Feature_Extractor_Name TEXT(100))
+            OUTPUT (distance FLOAT(32, 7))
+            TYPE NdarrayUDF
+            IMPL "{EvaDB_INSTALLATION_DIR}/functions/ndarray/similarity.py"
         """
         ).df()
 
@@ -101,9 +115,10 @@ class Cache:
         self.distance_threshold = tune(self.stats_list, self.tune_policy)
 
     def _top_k(self, key: str, k: int = 1):
+        print("in top_k")
         # Rewrite key double quotes.
         key = self._replace_str(key)
-
+        print("in top_k after key")
         # Query similar questions.
         df = self.cursor.query(
             f"""
@@ -111,6 +126,8 @@ class Cache:
             (SELECT * FROM {self.cache_name} ORDER BY Similarity(SentenceFeature("{key}"), SentenceFeature(key)) LIMIT 1) AS T
         """
         ).df()
+
+        print("DONE top_k query")
 
         # Extract results.
         ret_distance = float(df["distance"][0])
