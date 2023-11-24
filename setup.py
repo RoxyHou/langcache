@@ -5,7 +5,7 @@ setup(
     version='0.1',
     packages=find_packages(),
     install_requires=[
-        "evadb>=0.2.14",
+        "../evadb_milvus",
         "openai>=0.27.8"
     ],
 )

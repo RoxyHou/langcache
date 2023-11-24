@@ -157,6 +157,16 @@ class Cache:
         else:
             return None
 
+    def create_index(self):
+        # delete index if exists 
+        self.cursor.query(f"""DROP INDEX IF EXISTS {self.cache_name}""").df()
+
+        self.cursor.query(
+            f"""
+            CREATE INDEX {self.cache_name} ON {self.cache_name} (SentenceFeature(key)) USING MILVUS
+        """
+        ).df()
+
     def put(self, key: str, value: str):
         key = self._replace_str(key)
         value = self._replace_str(value)
@@ -174,14 +184,6 @@ class Cache:
             """
             ).df()
 
-            # delete index if exists 
-            self.cursor.query(f"""DROP INDEX IF EXISTS {self.cache_name}""").df()
-
-            self.cursor.query(
-                f"""
-                CREATE INDEX {self.cache_name} ON {self.cache_name} (SentenceFeature(key)) USING QDRANT
-            """
-            ).df()
             self.init = True
         else:
             self.cursor.query(
