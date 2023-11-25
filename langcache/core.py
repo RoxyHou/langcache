@@ -5,10 +5,14 @@ import string
 import random
 import multiprocessing as mp
 from pathlib import Path
+import pandas as pd
+import faiss
 
 from langcache.statistics.simple import SimpleStatistics
 from langcache.tuning.tune import tune
 
+from evadb.functions.ndarray.similarity import Similarity
+from sentence_transformers import SentenceTransformer
 
 import os
 
@@ -58,10 +62,12 @@ class Cache:
         self.init = False
 
         # Threshold distance and tuning hyper-parameter.
-        self.distance_threshold = 4
+        self.distance_threshold = 6
         self.tune_time = 0
         self.tune_frequency = tune_frequency
         self.tune_policy = tune_policy
+
+        self.sentenceTransformer = SentenceTransformer("all-MiniLM-L6-v2")
 
         # Statistics.
         self.stats_list = []
@@ -115,10 +121,8 @@ class Cache:
         self.distance_threshold = tune(self.stats_list, self.tune_policy)
 
     def _top_k(self, key: str, k: int = 1):
-        print("in top_k")
         # Rewrite key double quotes.
         key = self._replace_str(key)
-        print("in top_k after key")
         # Query similar questions.
         df = self.cursor.query(
             f"""
@@ -127,12 +131,13 @@ class Cache:
         """
         ).df()
 
-        print("DONE top_k query")
-
+        if df.empty:
+            return -1, -1, -1
         # Extract results.
         ret_distance = float(df["distance"][0])
         ret_key = df["key"][0]
         ret_value = df["value"][0]
+        
 
         return ret_key, ret_value, ret_distance
 
@@ -184,6 +189,14 @@ class Cache:
             """
             ).df()
 
+            # delete index if exists 
+            # self.cursor.query(f"""DROP INDEX IF EXISTS {self.cache_name}""").df()
+
+            # self.cursor.query(
+            #     f"""
+            #     CREATE INDEX {self.cache_name} ON {self.cache_name} (SentenceFeature(key)) USING MILVUS
+            # """
+            # ).df()
             self.init = True
         else:
             self.cursor.query(

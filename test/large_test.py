@@ -50,10 +50,9 @@ for train_qid in tqdm(train_qid_list):
     # Insert cache.
     cache.put(id_to_question[train_qid], str(train_qid))
 
-print("creating index in cache")
 cache.create_index()
 tp, fn, fp = 0, 0, 0
-print("done")
+
 for i, test_qid in tqdm(enumerate(test_qid_list)):
     # Test tuning.
     if i % 5 == 0:
