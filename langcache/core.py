@@ -4,14 +4,20 @@ import openai
 import string
 import random
 import multiprocessing as mp
+from pathlib import Path
+import pandas as pd
+import faiss
 
 from langcache.statistics.simple import SimpleStatistics
 from langcache.tuning.tune import tune
 
+from evadb.functions.ndarray.similarity import Similarity
+from sentence_transformers import SentenceTransformer
 
 import os
 
 dir_path = os.path.dirname(os.path.realpath(__file__))
+EvaDB_INSTALLATION_DIR = Path(evadb.__file__).parent
 
 
 class Cache:
@@ -19,9 +25,22 @@ class Cache:
         self.cursor = evadb.connect().cursor()
 
         # Setup needed functions.
+        self.cursor.query("DROP FUNCTION IF EXISTS SentenceFeature;").df()
         self.cursor.query(
             f"""
             CREATE FUNCTION IF NOT EXISTS SentenceFeature IMPL "{dir_path}/functions/sentence_feature.py"
+        """
+        ).df()
+
+        self.cursor.query("DROP FUNCTION IF EXISTS Similarity;").df()
+        self.cursor.query(
+            f"""
+            CREATE FUNCTION IF NOT EXISTS Similarity 
+            INPUT (Frame_Array_Open NDARRAY UINT8(3, ANYDIM, ANYDIM),
+                Frame_Array_Base NDARRAY UINT8(3, ANYDIM, ANYDIM), Feature_Extractor_Name TEXT(100))
+            OUTPUT (distance FLOAT(32, 7))
+            TYPE NdarrayUDF
+            IMPL "{EvaDB_INSTALLATION_DIR}/functions/ndarray/similarity.py"
         """
         ).df()
 
@@ -43,10 +62,12 @@ class Cache:
         self.init = False
 
         # Threshold distance and tuning hyper-parameter.
-        self.distance_threshold = 4
+        self.distance_threshold = 6
         self.tune_time = 0
         self.tune_frequency = tune_frequency
         self.tune_policy = tune_policy
+
+        self.sentenceTransformer = SentenceTransformer("all-MiniLM-L6-v2")
 
         # Statistics.
         self.stats_list = []
@@ -102,7 +123,6 @@ class Cache:
     def _top_k(self, key: str, k: int = 1):
         # Rewrite key double quotes.
         key = self._replace_str(key)
-
         # Query similar questions.
         df = self.cursor.query(
             f"""
@@ -111,10 +131,13 @@ class Cache:
         """
         ).df()
 
+        if df.empty:
+            return -1, -1, -1
         # Extract results.
         ret_distance = float(df["distance"][0])
         ret_key = df["key"][0]
         ret_value = df["value"][0]
+        
 
         return ret_key, ret_value, ret_distance
 
@@ -139,11 +162,22 @@ class Cache:
         else:
             return None
 
+    def create_index(self):
+        # delete index if exists 
+        self.cursor.query(f"""DROP INDEX IF EXISTS {self.cache_name}""").df()
+
+        self.cursor.query(
+            f"""
+            CREATE INDEX {self.cache_name} ON {self.cache_name} (SentenceFeature(key)) USING MILVUS
+        """
+        ).df()
+
     def put(self, key: str, value: str):
         key = self._replace_str(key)
         value = self._replace_str(value)
 
         if not self.init:
+            self.cursor.query(f"""DROP TABLE IF EXISTS {self.cache_name}""").df()
             self.cursor.query(
                 f"""
                 CREATE TABLE {self.cache_name} (key TEXT(1000), value TEXT(1000))
@@ -154,11 +188,15 @@ class Cache:
                 INSERT INTO {self.cache_name} (key, value) VALUES ("{key}", "{value}")
             """
             ).df()
-            self.cursor.query(
-                f"""
-                CREATE INDEX {self.cache_name} ON {self.cache_name} (SentenceFeature(key)) USING FAISS
-            """
-            ).df()
+
+            # delete index if exists 
+            # self.cursor.query(f"""DROP INDEX IF EXISTS {self.cache_name}""").df()
+
+            # self.cursor.query(
+            #     f"""
+            #     CREATE INDEX {self.cache_name} ON {self.cache_name} (SentenceFeature(key)) USING MILVUS
+            # """
+            # ).df()
             self.init = True
         else:
             self.cursor.query(
